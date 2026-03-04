@@ -125,6 +125,13 @@ def init_db():
         conn.commit()
     except Exception:
         pass
+    # Preenche tipo com base nos valores antigos do campo modelo/tipo
+    try:
+        c.execute("UPDATE estoque SET tipo='colorida' WHERE tipo ILIKE '%cmyk%' OR tipo ILIKE '%color%'")
+        c.execute("UPDATE estoque SET tipo='pb' WHERE tipo IS NULL OR (tipo != 'colorida' AND tipo != 'pb')")
+        conn.commit()
+    except Exception:
+        pass
 
     c.execute("SELECT COUNT(*) FROM estoque")
     if c.fetchone()[0] == 0:
@@ -530,7 +537,7 @@ INV_BODY = """
     <tr>
       <td><span class="code">{{ item.codigo }}</span></td>
       <td><strong>{{ item.setor }}</strong></td>
-      <td>{% if item.tipo=="colorida" %}<span class="badge badge-warn" style="font-size:10px">🎨 Colorida</span>{% else %}<span style="font-size:11px;color:var(--muted)">P&B</span>{% endif %}</td>
+      <td>{% if item.tipo=="colorida" %}<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:#b45309;background:#fffbeb;border:1px solid #fde68a;padding:3px 9px;border-radius:20px;white-space:nowrap">🎨 Colorida</span>{% else %}<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:#374151;background:#f3f4f6;border:1px solid #d1d5db;padding:3px 9px;border-radius:20px;white-space:nowrap">⬛ P&amp;B</span>{% endif %}</td>
       <td><span class="qty {% if item.quantidade==0 %}qty-0{% elif item.quantidade==1 %}qty-1{% else %}qty-ok{% endif %}">{{ item.quantidade }}</span></td>
       <td>
         {% if item.status=="OK" %}<span class="badge badge-ok">● OK</span>
