@@ -1,15 +1,15 @@
 """
 Controle de Toner — TI
-Dependências: flask flask-login werkzeug psycopg2-binary
+Dependencias: flask flask-login werkzeug psycopg2-binary
 pip install flask flask-login werkzeug psycopg2-binary
 """
 
 import os
-import psycopg2
-import psycopg2.extras
 from datetime import datetime
 from functools import wraps
 
+import psycopg2
+import psycopg2.extras
 from flask import (Flask, render_template_string, redirect, url_for,
                    request, flash, get_flashed_messages)
 from flask_login import (LoginManager, UserMixin, login_user,
@@ -20,7 +20,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 #  App & Login setup
 # ─────────────────────────────────────────────
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "TROQUE-ESTA-CHAVE-POR-ALGO-SEGURO-EM-PRODUCAO")
+app.secret_key = "TROQUE-ESTA-CHAVE-POR-ALGO-SEGURO-EM-PRODUCAO"
 
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
@@ -30,24 +30,24 @@ login_manager.login_message = "Por favor, faça login para continuar."
 #  Dados iniciais
 # ─────────────────────────────────────────────
 DADOS_INICIAIS = [
-    ("2IO9", "Almoxarifado",     "-",          1, 0, 72),
-    ("2IA6", "Aquiraz",          "-",          1, 0, 45),
-    ("2IO8", "Aracati",          "-",          1, 0, 15),
-    ("IYA8", "Doc. Ambiental",   "-",          0, 1, 8),
-    ("2GS1", "MTR",              "-",          0, 1, 5),
-    ("2IP4", "Operacional",      "-",          1, 0, 88),
-    ("2IP7", "Solda",            "-",          1, 0, 60),
-    ("2IP3", "Comercial",        "-",          1, 0, 33),
-    ("2IP8", "Compras",          "-",          1, 0, 91),
-    ("2IP9", "Diretoria",        "-",          1, 0, 19),
-    ("2IP5", "Licitação",        "-",          1, 0, 54),
-    ("2IQ1", "Manutenção",       "-",          1, 0, 12),
-    ("2IP2", "QSMS",             "-",          1, 0, 77),
-    ("2MS6", "Setor Pessoal",    "-",          1, 0, 40),
-    ("-",    "Braslimp",         "LaserJet",   1, 0, 25),
-    ("2IO7", "-",                "Color CMYK", 0, 0, 3),
-    ("9I55", "GP (New Printer)", "CMYK",       0, 0, 68),
-    ("MQW5", "Pecém",            "-",          3, 0, 82),
+    ("2IO9", "Almoxarifado",     "pb",       1, 0, 72),
+    ("2IA6", "Aquiraz",          "pb",       1, 0, 45),
+    ("2IO8", "Aracati",          "pb",       1, 0, 15),
+    ("IYA8", "Doc. Ambiental",   "pb",       0, 1, 8),
+    ("2GS1", "MTR",              "pb",       0, 1, 5),
+    ("2IP4", "Operacional",      "pb",       1, 0, 88),
+    ("2IP7", "Solda",            "pb",       1, 0, 60),
+    ("2IP3", "Comercial",        "pb",       1, 0, 33),
+    ("2IP8", "Compras",          "pb",       1, 0, 91),
+    ("2IP9", "Diretoria",        "pb",       1, 0, 19),
+    ("2IP5", "Licitação",        "pb",       1, 0, 54),
+    ("2IQ1", "Manutenção",       "pb",       1, 0, 12),
+    ("2IP2", "QSMS",             "pb",       1, 0, 77),
+    ("2MS6", "Setor Pessoal",    "pb",       1, 0, 40),
+    ("-",    "Braslimp",         "pb",       1, 0, 25),
+    ("2IO7", "Color",            "colorida", 0, 0, 3),
+    ("9I55", "GP (New Printer)", "colorida", 0, 0, 68),
+    ("MQW5", "Pecém",           "pb",       3, 0, 82),
 ]
 
 USUARIOS_INICIAIS = [
@@ -58,24 +58,23 @@ USUARIOS_INICIAIS = [
 # ─────────────────────────────────────────────
 #  Banco de dados — PostgreSQL
 # ─────────────────────────────────────────────
-DATABASE_URL = os.environ.get("DATABASE_URL")
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
     return conn
 
-def fetchall(cursor):
-    """Retorna lista de dicts a partir de um cursor já executado."""
-    cols = [d[0] for d in cursor.description]
-    return [dict(zip(cols, row)) for row in cursor.fetchall()]
-
-def fetchone(cursor):
-    """Retorna um dict ou None a partir de um cursor já executado."""
-    row = cursor.fetchone()
-    if row is None:
-        return None
+def dict_row(cursor, row):
     cols = [d[0] for d in cursor.description]
     return dict(zip(cols, row))
+
+def fetchall_dict(cursor):
+    return [dict_row(cursor, r) for r in cursor.fetchall()]
+
+def fetchone_dict(cursor):
+    row = cursor.fetchone()
+    return dict_row(cursor, row) if row else None
 
 def init_db():
     conn = get_db()
@@ -86,10 +85,10 @@ def init_db():
             id         SERIAL PRIMARY KEY,
             codigo     TEXT,
             setor      TEXT,
-            modelo     TEXT,
+            tipo       TEXT DEFAULT 'pb',
             quantidade INTEGER,
             aguardando INTEGER DEFAULT 0,
-            observacao TEXT    DEFAULT '',
+            observacao TEXT    DEFAULT \'\',
             tinta_pct  INTEGER DEFAULT NULL
         )
     """)
@@ -115,16 +114,26 @@ def init_db():
         )
     """)
 
-    # Popula estoque se vazio
+    # Migração: renomear coluna modelo -> tipo (para bancos existentes)
+    try:
+        c.execute("ALTER TABLE estoque RENAME COLUMN modelo TO tipo")
+        conn.commit()
+    except Exception:
+        pass
+    try:
+        c.execute("ALTER TABLE estoque ADD COLUMN tipo TEXT DEFAULT 'pb'")
+        conn.commit()
+    except Exception:
+        pass
+
     c.execute("SELECT COUNT(*) FROM estoque")
     if c.fetchone()[0] == 0:
         for row in DADOS_INICIAIS:
             c.execute(
-                "INSERT INTO estoque (codigo,setor,modelo,quantidade,aguardando,tinta_pct) VALUES (%s,%s,%s,%s,%s,%s)",
+                "INSERT INTO estoque (codigo,setor,tipo,quantidade,aguardando,tinta_pct) VALUES (%s,%s,%s,%s,%s,%s)",
                 row
             )
 
-    # Popula usuários se vazio
     c.execute("SELECT COUNT(*) FROM usuarios")
     if c.fetchone()[0] == 0:
         for row in USUARIOS_INICIAIS:
@@ -153,7 +162,7 @@ def load_user(user_id):
     conn = get_db()
     c = conn.cursor()
     c.execute("SELECT * FROM usuarios WHERE id=%s", (user_id,))
-    row = fetchone(c)
+    row = fetchone_dict(c)
     conn.close()
     return User(row) if row else None
 
@@ -446,7 +455,7 @@ def login():
         conn = get_db()
         c = conn.cursor()
         c.execute("SELECT * FROM usuarios WHERE username=%s", (u,))
-        row = fetchone(c)
+        row = fetchone_dict(c)
         conn.close()
         if row and check_password_hash(row["password"], p):
             login_user(User(row))
@@ -468,15 +477,15 @@ def index():
     conn = get_db()
     c = conn.cursor()
     c.execute("SELECT * FROM estoque ORDER BY setor")
-    rows = fetchall(c)
+    rows       = fetchall_dict(c)
     c.execute("SELECT COALESCE(SUM(quantidade),0) FROM estoque")
-    total = c.fetchone()[0]
+    total      = c.fetchone()[0]
     c.execute("SELECT COUNT(*) FROM estoque WHERE quantidade=0")
-    zerados = c.fetchone()[0]
+    zerados    = c.fetchone()[0]
     c.execute("SELECT COUNT(*) FROM estoque WHERE aguardando=1")
     aguardando = c.fetchone()[0]
     c.execute("SELECT COUNT(*) FROM estoque WHERE quantidade>=1")
-    ok_count = c.fetchone()[0]
+    ok_count   = c.fetchone()[0]
     conn.close()
 
     dados, alerta = [], False
@@ -495,7 +504,6 @@ def index():
         obs_map={d["id"]: d["observacao"] for d in dados},
         tinta_map={d["id"]: d["tinta_pct"] for d in dados})
     return render_page("Inventário", "Controle de toners em estoque", "inventario", body)
-
 INV_BODY = """
 {% if alerta %}
 <div class="alert alert-danger">
@@ -515,14 +523,14 @@ INV_BODY = """
   <div class="table-wrap">
   <table>
     <thead>
-      <tr><th>Código</th><th>Setor / Unidade</th><th>Modelo</th><th>Qtd</th><th>Status</th><th>Nível de Tinta</th><th>Observação</th><th>Ações</th></tr>
+      <tr><th>Código</th><th>Setor / Unidade</th><th>Tipo</th><th>Qtd</th><th>Status</th><th>Nível de Tinta</th><th>Observação</th><th>Ações</th></tr>
     </thead>
     <tbody>
     {% for item in dados %}
     <tr>
       <td><span class="code">{{ item.codigo }}</span></td>
       <td><strong>{{ item.setor }}</strong></td>
-      <td style="color:var(--muted)">{{ item.modelo }}</td>
+      <td>{% if item.tipo=="colorida" %}<span class="badge badge-warn" style="font-size:10px">🎨 Colorida</span>{% else %}<span style="font-size:11px;color:var(--muted)">P&B</span>{% endif %}</td>
       <td><span class="qty {% if item.quantidade==0 %}qty-0{% elif item.quantidade==1 %}qty-1{% else %}qty-ok{% endif %}">{{ item.quantidade }}</span></td>
       <td>
         {% if item.status=="OK" %}<span class="badge badge-ok">● OK</span>
@@ -578,6 +586,7 @@ INV_BODY = """
   </div>
 </div>
 
+<!-- Dados das observações em JSON seguro -->
 <script>
 var obsData = {{ obs_map | tojson }};
 var tintaData = {{ tinta_map | tojson }};
@@ -663,9 +672,10 @@ document.addEventListener('keydown', function(e) {
 @app.route("/mais/<int:id>")
 @login_required
 def mais(id):
-    conn = get_db(); c = conn.cursor()
+    conn = get_db()
+    c = conn.cursor()
     c.execute("SELECT setor FROM estoque WHERE id=%s", (id,))
-    row = fetchone(c)
+    row = fetchone_dict(c)
     c.execute("UPDATE estoque SET quantidade=quantidade+1, aguardando=0 WHERE id=%s", (id,))
     conn.commit(); conn.close()
     registrar(id, "Adição", f"+1 unidade — {row['setor']}")
@@ -674,9 +684,10 @@ def mais(id):
 @app.route("/menos/<int:id>")
 @login_required
 def menos(id):
-    conn = get_db(); c = conn.cursor()
+    conn = get_db()
+    c = conn.cursor()
     c.execute("SELECT setor,quantidade FROM estoque WHERE id=%s", (id,))
-    row = fetchone(c)
+    row = fetchone_dict(c)
     if row["quantidade"] > 0:
         c.execute("UPDATE estoque SET quantidade=quantidade-1 WHERE id=%s", (id,))
         conn.commit()
@@ -687,9 +698,10 @@ def menos(id):
 @app.route("/solicitar/<int:id>")
 @login_required
 def solicitar(id):
-    conn = get_db(); c = conn.cursor()
+    conn = get_db()
+    c = conn.cursor()
     c.execute("SELECT setor FROM estoque WHERE id=%s", (id,))
-    row = fetchone(c)
+    row = fetchone_dict(c)
     c.execute("UPDATE estoque SET aguardando=1 WHERE id=%s", (id,))
     conn.commit(); conn.close()
     registrar(id, "Solicitação", f"Pedido enviado à Selbetti — {row['setor']}")
@@ -698,9 +710,10 @@ def solicitar(id):
 @app.route("/recebido/<int:id>")
 @login_required
 def recebido(id):
-    conn = get_db(); c = conn.cursor()
+    conn = get_db()
+    c = conn.cursor()
     c.execute("SELECT setor FROM estoque WHERE id=%s", (id,))
-    row = fetchone(c)
+    row = fetchone_dict(c)
     c.execute("UPDATE estoque SET quantidade=quantidade+1, aguardando=0 WHERE id=%s", (id,))
     conn.commit(); conn.close()
     registrar(id, "Recebimento", f"Toner recebido +1 — {row['setor']}")
@@ -710,9 +723,10 @@ def recebido(id):
 @login_required
 def observacao(id):
     obs = request.form.get("observacao","").strip()
-    conn = get_db(); c = conn.cursor()
+    conn = get_db()
+    c = conn.cursor()
     c.execute("SELECT setor FROM estoque WHERE id=%s", (id,))
-    row = fetchone(c)
+    row = fetchone_dict(c)
     c.execute("UPDATE estoque SET observacao=%s WHERE id=%s", (obs, id))
     conn.commit(); conn.close()
     registrar(id, "Observação", f"Obs atualizada — {row['setor']}: \"{obs}\"")
@@ -726,9 +740,10 @@ def tinta(id):
         pct = max(0, min(100, pct))
     except ValueError:
         pct = None
-    conn = get_db(); c = conn.cursor()
+    conn = get_db()
+    c = conn.cursor()
     c.execute("SELECT setor FROM estoque WHERE id=%s", (id,))
-    row = fetchone(c)
+    row = fetchone_dict(c)
     c.execute("UPDATE estoque SET tinta_pct=%s WHERE id=%s", (pct, id))
     conn.commit(); conn.close()
     registrar(id, "Nível de Tinta", f"Tinta atualizada para {pct}% — {row['setor']}")
@@ -767,9 +782,10 @@ HIST_BODY = """
 @app.route("/historico")
 @login_required
 def historico():
-    conn = get_db(); c = conn.cursor()
+    conn = get_db()
+    c = conn.cursor()
     c.execute("SELECT * FROM historico ORDER BY id DESC LIMIT 200")
-    rows = fetchall(c)
+    rows = fetchall_dict(c)
     conn.close()
     body = render_template_string(HIST_BODY, registros=rows,
         url_for=url_for, current_user=current_user)
@@ -779,9 +795,7 @@ def historico():
 @login_required
 @admin_required
 def limpar_historico():
-    conn = get_db(); c = conn.cursor()
-    c.execute("DELETE FROM historico")
-    conn.commit(); conn.close()
+    conn = get_db(); c = conn.cursor(); c.execute("DELETE FROM historico"); conn.commit(); conn.close()
     return redirect(url_for("historico"))
 
 # ── Dashboard ─────────────────────────────────
@@ -810,6 +824,7 @@ DASH_BODY = """
 @media(max-width:900px){.kpi-row{grid-template-columns:repeat(2,1fr)}}
 </style>
 
+<!-- KPIs -->
 <div class="kpi-row">
   <div class="kpi"><div class="kpi-label">Total em Estoque</div><div class="kpi-val kv-blue">{{ total }}</div><div class="kpi-sub">{{ total_itens }} setores monitorados</div></div>
   <div class="kpi"><div class="kpi-label">Setores OK</div><div class="kpi-val kv-green">{{ ok_count }}</div><div class="kpi-sub">{{ pct_ok }}% em dia</div></div>
@@ -817,7 +832,10 @@ DASH_BODY = """
   <div class="kpi"><div class="kpi-label">Zerados</div><div class="kpi-val kv-red">{{ zerados }}</div><div class="kpi-sub">requerem ação</div></div>
 </div>
 
+<!-- Saúde + Atenção -->
 <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;margin-bottom:20px">
+
+  <!-- Health score -->
   <div class="panel" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 20px;gap:8px;text-align:center">
     <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">Saúde Geral</div>
     <div style="font-family:var(--mono);font-size:52px;font-weight:700;line-height:1;color:{% if pct_ok >= 80 %}var(--ok){% elif pct_ok >= 50 %}var(--warn){% else %}var(--danger){% endif %}">{{ pct_ok }}%</div>
@@ -826,6 +844,8 @@ DASH_BODY = """
       <div style="height:100%;border-radius:3px;width:{{ pct_ok }}%;background:{% if pct_ok >= 80 %}var(--ok){% elif pct_ok >= 50 %}var(--warn){% else %}var(--danger){% endif %}"></div>
     </div>
   </div>
+
+  <!-- Requer atenção -->
   <div class="panel">
     <div class="panel-title">Requer Atenção</div>
     <div class="panel-body">
@@ -866,8 +886,10 @@ DASH_BODY = """
       {% endfor %}
     </div>
   </div>
+
 </div>
 
+<!-- Tinta ranking -->
 {% set com_tinta = detalhes | selectattr('tinta_pct') | list %}
 {% if com_tinta %}
 <div class="panel">
@@ -887,25 +909,30 @@ DASH_BODY = """
 {% endif %}
 """
 
+
+
+
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    conn = get_db(); c = conn.cursor()
+    conn = get_db()
+    c = conn.cursor()
     c.execute("SELECT COALESCE(SUM(quantidade),0) FROM estoque")
-    total = c.fetchone()[0]
+    total       = c.fetchone()[0]
     c.execute("SELECT COUNT(*) FROM estoque WHERE quantidade=0 AND aguardando=0")
-    zerados = c.fetchone()[0]
+    zerados     = c.fetchone()[0]
     c.execute("SELECT COUNT(*) FROM estoque WHERE aguardando=1")
-    aguardando = c.fetchone()[0]
+    aguardando  = c.fetchone()[0]
     c.execute("SELECT COUNT(*) FROM estoque WHERE quantidade>=1")
-    ok_count = c.fetchone()[0]
+    ok_count    = c.fetchone()[0]
     c.execute("SELECT COUNT(*) FROM estoque")
     total_itens = c.fetchone()[0]
     c.execute("SELECT id,setor,quantidade,tinta_pct FROM estoque ORDER BY quantidade ASC, setor ASC")
-    detalhes = fetchall(c)
+    detalhes    = fetchall_dict(c)
     conn.close()
     pct_ok       = round(ok_count  / total_itens * 100) if total_itens else 0
     pct_problema = round(zerados   / total_itens * 100) if total_itens else 0
+    # Toners com tinta crítica (≤ 20%) ou baixa (≤ 50%)
     alertas_tinta = [d for d in detalhes if d["tinta_pct"] is not None and d["tinta_pct"] <= 20]
     avisos_tinta  = [d for d in detalhes if d["tinta_pct"] is not None and 20 < d["tinta_pct"] <= 50]
     body = render_template_string(DASH_BODY,
@@ -929,7 +956,7 @@ USR_BODY = """
     <tr>
       <td><span class="code">{{ u.username }}</span></td>
       <td>{{ u.nome }}</td>
-      <td>{% if u.is_admin %}<span class="badge badge-primary">Admin</span>{% else %}<span class="badge">Equipe</span>{% endif %}</td>
+      <td>{% if u.is_admin %}<span class="badge badge-blue">Admin</span>{% else %}<span class="badge">Equipe</span>{% endif %}</td>
       <td style="text-align:right">
         {% if u.id != current_user.id %}
         <a href="{{ url_for('excluir_usuario',id=u.id) }}"
@@ -966,9 +993,10 @@ USR_BODY = """
 @login_required
 @admin_required
 def usuarios():
-    conn = get_db(); c = conn.cursor()
+    conn = get_db()
+    c = conn.cursor()
     c.execute("SELECT * FROM usuarios ORDER BY nome")
-    rows = fetchall(c)
+    rows = fetchall_dict(c)
     conn.close()
     body = render_template_string(USR_BODY, usuarios=rows,
         url_for=url_for, current_user=current_user)
@@ -985,7 +1013,8 @@ def criar_usuario():
     if len(password) < 6:
         return redirect(url_for("usuarios"))
     try:
-        conn = get_db(); c = conn.cursor()
+        conn = get_db()
+        c = conn.cursor()
         c.execute(
             "INSERT INTO usuarios (username,password,nome,is_admin) VALUES (%s,%s,%s,%s)",
             (username, generate_password_hash(password), nome, is_admin)
@@ -999,7 +1028,8 @@ def criar_usuario():
 @login_required
 @admin_required
 def excluir_usuario(id):
-    conn = get_db(); c = conn.cursor()
+    conn = get_db()
+    c = conn.cursor()
     c.execute("DELETE FROM usuarios WHERE id=%s", (id,))
     conn.commit(); conn.close()
     return redirect(url_for("usuarios"))
