@@ -119,19 +119,19 @@ def init_db():
         c.execute("ALTER TABLE estoque RENAME COLUMN modelo TO tipo")
         conn.commit()
     except Exception:
-        pass
+        conn.rollback()
     try:
         c.execute("ALTER TABLE estoque ADD COLUMN tipo TEXT DEFAULT 'pb'")
         conn.commit()
     except Exception:
-        pass
+        conn.rollback()
     # Preenche tipo com base nos valores antigos do campo modelo/tipo
     try:
         c.execute("UPDATE estoque SET tipo='colorida' WHERE tipo ILIKE '%cmyk%' OR tipo ILIKE '%color%'")
         c.execute("UPDATE estoque SET tipo='pb' WHERE tipo IS NULL OR (tipo != 'colorida' AND tipo != 'pb')")
         conn.commit()
     except Exception:
-        pass
+        conn.rollback()
 
     c.execute("SELECT COUNT(*) FROM estoque")
     if c.fetchone()[0] == 0:
